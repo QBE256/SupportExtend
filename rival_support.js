@@ -1,5 +1,5 @@
 ﻿/*--------------------------------------------------------------------------
-　敵対勢力に支援効果を与えるスクリプト(以外にも色々) ver 1.5
+　敵対勢力に支援効果を与えるスクリプト(以外にも色々) ver 1.6
 ■作成者
 キュウブ
 
@@ -27,8 +27,15 @@
 {experienceFactor: <数値>}
 を入れると範囲内にいる自軍ユニットの取得経験値を <数値>/100 倍の分だけ増減させる事ができます（200と設定すれば取得量が2倍になる）
 
+本来支援機能は最小射程が1となりますが、
+{start_range: <数値>}
+を追加する事で最小射程を1より大きくする事ができるようになります。
+例えば、射程3～10に効果がある支援などが設定可能です。
 
 ■更新履歴
+ver 1.6 2020/5/1
+start_range機能を追加
+
 ver 1.5 2017/9/3
 支援適用範囲がバグっていたので修正
 
@@ -159,17 +166,30 @@ SRPG Studio Version:1.144
 			}
 			else {
 				if (skill.getRangeType() === SelectionRangeType.ALL) {
-					isSet = true;
+					endRange = SupportCalculator._ALLRANGEVALUE;
 				}
 				else if (skill.getRangeType() === SelectionRangeType.MULTI) {
 					// indexArray = IndexArray.getBestIndexArray(unit.getMapX(), unit.getMapY(), 1, skill.getRangeValue());
 					// 「指定範囲」の場合は、indexArray内の位置にunitが存在しているか調べる
 					// isSet = IndexArray.findUnit(indexArray, targetUnit);
-					if (Math.abs(unit.getMapX() - targetUnit.getMapX()) + Math.abs(unit.getMapY() - targetUnit.getMapY()) <= skill.getRangeValue()) {
-						isSet = true;
-					} else {
-						isSet = false;
-					}
+					endRange = skill.getRangeValue();
+				}
+				else {
+					endRange = 0;
+				}
+
+				if (typeof skill.custom.start_range === 'number') {
+					startRange = skill.custom.start_range;
+				}
+				else {
+					startRange = 1;
+				}
+
+				if (this._isWithinRange(unit, targetUnit, startRange, endRange)) {
+					isSet = true;
+				}
+				else {
+					isSet = false;
 				}
 			}
 
@@ -193,6 +213,18 @@ SRPG Studio Version:1.144
 	};
 
 })();
+
+SupportCalculator._ALLRANGEVALUE = -1;
+SupportCalculator._isWithinRange = function(unit, targetUnit, startRange, endRange) {
+	var distance = Math.abs(unit.getMapX() - targetUnit.getMapX()) + Math.abs(unit.getMapY() - targetUnit.getMapY());
+
+	if (distance >= startRange && (distance <= endRange || endRange === SupportCalculator._ALLRANGEVALUE)) {
+		return true;
+	}
+	else {
+		return false;
+	}
+};
 
 SupportCalculator._customAddStatus = function(totalStatus, skill) {
 	if (typeof skill.custom.experienceFactor === 'number') {
