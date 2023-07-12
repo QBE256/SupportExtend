@@ -1,5 +1,5 @@
 ﻿/*--------------------------------------------------------------------------
-　敵対勢力に支援効果を与えるスクリプト(以外にも色々) ver 1.6
+　敵対勢力に支援効果を与えるスクリプト(以外にも色々) ver 1.7
 ■作成者
 キュウブ
 
@@ -33,6 +33,9 @@
 例えば、射程3～10に効果がある支援などが設定可能です。
 
 ■更新履歴
+ver 1.7 2023/7/12
+死亡時に発動する支援スクリプトとの競合を解消
+
 ver 1.6 2020/5/1
 start_range機能を追加
 
@@ -69,100 +72,40 @@ SRPG Studio Version:1.144
 --------------------------------------------------------------------------*/
 
 (function() {
-
+	var _SupportCalculator_createTotalStatus = SupportCalculator.createTotalStatus;
 	SupportCalculator.createTotalStatus = function(unit) {
-		var i, x, y, index, targetUnit, unitType, list, indexArray, count;
-		var totalStatus = {};
-		
-		totalStatus.powerTotal = 0;
-		totalStatus.defenseTotal = 0;
-		totalStatus.hitTotal = 0;
-		totalStatus.avoidTotal = 0;
-		totalStatus.criticalTotal = 0;
-		totalStatus.criticalAvoidTotal = 0;
+		var totalStatus = _SupportCalculator_createTotalStatus.apply(this, arguments);
 		totalStatus.experienceFactorTotal = 100; // 経験値補正（初期値は100 = 1倍）
-		
 		if (this._isStatusDisabled()) {
 			return totalStatus;
 		}
-		
-		indexArray = IndexArray.getBestIndexArray(unit.getMapX(), unit.getMapY(), 1, this._getSupportRange());
-		count = indexArray.length;
-		
-		// unitの一定範囲(既定3マス)にいるtargetUnitを探す
-		for (i = 0; i < count; i++) {
-			index = indexArray[i];
-			x = CurrentMap.getX(index);
-			y = CurrentMap.getY(index);
-			targetUnit = PosChecker.getUnitFromPos(x, y);
-			if (targetUnit !== null) {
-				// targetUnitが見つかった場合は、支援データをtotalStatusに加算
-				this._collectStatus(unit, targetUnit, totalStatus);
-			}
-		}
-
-		unitType = unit.getUnitType();
-		if (unitType === UnitType.PLAYER) {
+		var unitType = unit.getUnitType();
+		if (unitType === UnitType.ENEMY) {
 			this._collectSkillStatus(unit, PlayerList.getSortieList(), totalStatus);
-			this._collectSkillStatus(unit, EnemyList.getAliveList(), totalStatus);
-			this._checkSkillStatus(unit, null, true, totalStatus);
-		}
-		else if (unitType === UnitType.ENEMY) {
-			this._collectSkillStatus(unit, PlayerList.getSortieList(), totalStatus);
-			this._collectSkillStatus(unit, EnemyList.getAliveList(), totalStatus);
 			this._collectSkillStatus(unit, AllyList.getAliveList(), totalStatus);
-			this._checkSkillStatus(unit, null, true, totalStatus);
 		}
 		else {
 			this._collectSkillStatus(unit, EnemyList.getAliveList(), totalStatus);
-			this._collectSkillStatus(unit, AllyList.getAliveList(), totalStatus);
-			this._checkSkillStatus(unit, null, true, totalStatus);
 		}
 		
 		return totalStatus;
 	};
 
-	SupportCalculator._collectSkillStatus = function(unit, list, totalStatus) {
-		var i, targetUnit;
-		var count = list.getCount();
-
-		for (i = 0; i < count; i++) {
-			targetUnit = list.getData(i);
-			if (unit === targetUnit) {
-				continue;
-			}
-
-			this._checkSkillStatus(targetUnit, unit, false, totalStatus);
-		}
-	};
-
 	SupportCalculator._checkSkillStatus = function(unit, targetUnit, isSelf, totalStatus) {
-		var i, skill, isSet, indexArray;
 		var arr = SkillControl.getDirectSkillArray(unit, SkillType.SUPPORT, '');
-		var count = arr.length;
+		var isRival = !isSelf && this._isRival(unit, targetUnit);
 
-		var isRival = this._isRival(unit, targetUnit);
-		var rivalSupport;
+		for (var i = 0; i < arr.length; i++) {
+			var skill = arr[i].skill;
+			var isRivalSupport = !!skill.custom.rival_support;
+			var isSet = false;
 
-		for (i = 0; i < count; i++) {
-			skill = arr[i].skill;
-
-			isSet = false;
-
-			if (typeof skill.custom.rival_support === 'boolean') {
-				rivalSupport = skill.custom.rival_support;
-			} else {
-				rivalSupport = false;
-			}
-
-			if (isRival !== rivalSupport) {
+			if (isRival !== isRivalSupport) {
 				continue;
 			}
 
 			if (isSelf) {
-				if (skill.getRangeType() === SelectionRangeType.SELFONLY || (typeof skill.custom.self_support === 'boolean' && skill.custom.self_support)) {
-					isSet = true;
-				}
+				isSet = skill.getRangeType() === SelectionRangeType.SELFONLY || !!skill.custom.self_support;
 			}
 			else {
 				if (skill.getRangeType() === SelectionRangeType.ALL) {
@@ -185,12 +128,7 @@ SRPG Studio Version:1.144
 					startRange = 1;
 				}
 
-				if (this._isWithinRange(unit, targetUnit, startRange, endRange)) {
-					isSet = true;
-				}
-				else {
-					isSet = false;
-				}
+				isSet = !!this._isWithinRange(unit, targetUnit, startRange, endRange)
 			}
 
 			if (isSet && this._isSupportable(unit, targetUnit, skill)) {
@@ -233,7 +171,6 @@ SupportCalculator._customAddStatus = function(totalStatus, skill) {
 };
 
 SupportCalculator._isRival = function(unit, targetUnit) {
-
 	if (!targetUnit) {
 		return false;
 	}
