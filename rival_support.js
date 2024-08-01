@@ -33,6 +33,9 @@
 例えば、射程3～10に効果がある支援などが設定可能です。
 
 ■更新履歴
+ver 1.8 2024/8/2
+動作しないバグを修正
+
 ver 1.7 2023/7/12
 死亡時に発動する支援スクリプトとの競合を解消
 
@@ -71,115 +74,116 @@ SRPG Studio Version:1.144
 
 --------------------------------------------------------------------------*/
 
-(function() {
-	var _SupportCalculator_createTotalStatus = SupportCalculator.createTotalStatus;
-	SupportCalculator.createTotalStatus = function(unit) {
-		var totalStatus = _SupportCalculator_createTotalStatus.apply(this, arguments);
-		totalStatus.experienceFactorTotal = 100; // 経験値補正（初期値は100 = 1倍）
-		if (this._isStatusDisabled()) {
-			return totalStatus;
-		}
-		var unitType = unit.getUnitType();
-		if (unitType === UnitType.ENEMY) {
-			this._collectSkillStatus(unit, PlayerList.getSortieList(), totalStatus);
-			this._collectSkillStatus(unit, AllyList.getAliveList(), totalStatus);
-		}
-		else {
-			this._collectSkillStatus(unit, EnemyList.getAliveList(), totalStatus);
-		}
-		
-		return totalStatus;
-	};
+(function () {
+  var _SupportCalculator_createTotalStatus = SupportCalculator.createTotalStatus;
+  SupportCalculator.createTotalStatus = function (unit) {
+    var totalStatus = _SupportCalculator_createTotalStatus.apply(this, arguments);
+    totalStatus.experienceFactorTotal = 100; // 経験値補正（初期値は100 = 1倍）
+    if (this._isStatusDisabled()) {
+      return totalStatus;
+    }
+    var unitType = unit.getUnitType();
+    if (unitType === UnitType.ENEMY) {
+      this._collectRivalSupportSkillStatus(unit, PlayerList.getSortieList(), totalStatus);
+      this._collectRivalSupportSkillStatus(unit, AllyList.getAliveList(), totalStatus);
+    } else {
+      this._collectRivalSupportSkillStatus(unit, EnemyList.getAliveList(), totalStatus);
+    }
 
-	SupportCalculator._checkSkillStatus = function(unit, targetUnit, isSelf, totalStatus) {
-		var arr = SkillControl.getDirectSkillArray(unit, SkillType.SUPPORT, '');
-		var isRival = !isSelf && this._isRival(unit, targetUnit);
+    return totalStatus;
+  };
 
-		for (var i = 0; i < arr.length; i++) {
-			var skill = arr[i].skill;
-			var isRivalSupport = !!skill.custom.rival_support;
-			var isSet = false;
+  SupportCalculator._collectRivalSupportSkillStatus = function (unit, list, totalStatus) {
+    var i, targetUnit;
+    var count = list.getCount();
 
-			if (isRival !== isRivalSupport) {
-				continue;
-			}
+    for (i = 0; i < count; i++) {
+      targetUnit = list.getData(i);
+      if (unit === targetUnit) {
+        continue;
+      }
 
-			if (isSelf) {
-				isSet = skill.getRangeType() === SelectionRangeType.SELFONLY || !!skill.custom.self_support;
-			}
-			else {
-				if (skill.getRangeType() === SelectionRangeType.ALL) {
-					endRange = SupportCalculator._ALLRANGEVALUE;
-				}
-				else if (skill.getRangeType() === SelectionRangeType.MULTI) {
-					// indexArray = IndexArray.getBestIndexArray(unit.getMapX(), unit.getMapY(), 1, skill.getRangeValue());
-					// 「指定範囲」の場合は、indexArray内の位置にunitが存在しているか調べる
-					// isSet = IndexArray.findUnit(indexArray, targetUnit);
-					endRange = skill.getRangeValue();
-				}
-				else {
-					endRange = 0;
-				}
+      this._checkSkillStatus(targetUnit, unit, false, totalStatus);
+    }
+  };
 
-				if (typeof skill.custom.start_range === 'number') {
-					startRange = skill.custom.start_range;
-				}
-				else {
-					startRange = 1;
-				}
+  SupportCalculator._checkSkillStatus = function (unit, targetUnit, isSelf, totalStatus) {
+    var arr = SkillControl.getDirectSkillArray(unit, SkillType.SUPPORT, "");
+    var isRival = !isSelf && this._isRival(unit, targetUnit);
 
-				isSet = !!this._isWithinRange(unit, targetUnit, startRange, endRange)
-			}
+    for (var i = 0; i < arr.length; i++) {
+      var skill = arr[i].skill;
+      var isRivalSupport = !!skill.custom.rival_support;
+      var isSet = false;
+      if (isRival !== isRivalSupport) {
+        continue;
+      }
+      if (isSelf) {
+        isSet = skill.getRangeType() === SelectionRangeType.SELFONLY || !!skill.custom.self_support;
+      } else {
+        if (skill.getRangeType() === SelectionRangeType.ALL) {
+          endRange = SupportCalculator._ALLRANGEVALUE;
+        } else if (skill.getRangeType() === SelectionRangeType.MULTI) {
+          // indexArray = IndexArray.getBestIndexArray(unit.getMapX(), unit.getMapY(), 1, skill.getRangeValue());
+          // 「指定範囲」の場合は、indexArray内の位置にunitが存在しているか調べる
+          // isSet = IndexArray.findUnit(indexArray, targetUnit);
+          endRange = skill.getRangeValue();
+        } else {
+          endRange = 0;
+        }
 
-			if (isSet && this._isSupportable(unit, targetUnit, skill)) {
-				this._addStatus(totalStatus, skill.getSupportStatus());
-				this._customAddStatus(totalStatus, skill);
-			}
-		}
-	};
+        if (typeof skill.custom.start_range === "number") {
+          startRange = skill.custom.start_range;
+        } else {
+          startRange = 1;
+        }
 
-	ExperienceCalculator._tempFunctions = [
-		ExperienceCalculator._getExperienceFactor
-	];
+        isSet = !!this._isWithinRange(unit, targetUnit, startRange, endRange);
+      }
 
-	ExperienceCalculator._getExperienceFactor = function(unit) {
+      if (isSet && this._isSupportable(unit, targetUnit, skill)) {
+        this._addStatus(totalStatus, skill.getSupportStatus());
+        this._customAddStatus(totalStatus, skill);
+      }
+    }
+  };
 
-		var defaultFactor = this._tempFunctions[0].call(this, unit);
-		var totalStatus = SupportCalculator.createTotalStatus(unit);
+  ExperienceCalculator._tempFunctions = [ExperienceCalculator._getExperienceFactor];
 
-		return defaultFactor + (totalStatus.experienceFactorTotal - 100) / 100;
-	};
+  ExperienceCalculator._getExperienceFactor = function (unit) {
+    var defaultFactor = this._tempFunctions[0].call(this, unit);
+    var totalStatus = SupportCalculator.createTotalStatus(unit);
 
+    return defaultFactor + (totalStatus.experienceFactorTotal - 100) / 100;
+  };
 })();
 
 SupportCalculator._ALLRANGEVALUE = -1;
-SupportCalculator._isWithinRange = function(unit, targetUnit, startRange, endRange) {
-	var distance = Math.abs(unit.getMapX() - targetUnit.getMapX()) + Math.abs(unit.getMapY() - targetUnit.getMapY());
-
-	if (distance >= startRange && (distance <= endRange || endRange === SupportCalculator._ALLRANGEVALUE)) {
-		return true;
-	}
-	else {
-		return false;
-	}
+SupportCalculator._isWithinRange = function (unit, targetUnit, startRange, endRange) {
+  var distance = Math.abs(unit.getMapX() - targetUnit.getMapX()) + Math.abs(unit.getMapY() - targetUnit.getMapY());
+  if (distance >= startRange && (distance <= endRange || endRange === SupportCalculator._ALLRANGEVALUE)) {
+    return true;
+  } else {
+    return false;
+  }
 };
 
-SupportCalculator._customAddStatus = function(totalStatus, skill) {
-	if (typeof skill.custom.experienceFactor === 'number') {
-		totalStatus.experienceFactorTotal += skill.custom.experienceFactor;
-	}
+SupportCalculator._customAddStatus = function (totalStatus, skill) {
+  if (typeof skill.custom.experienceFactor === "number") {
+    totalStatus.experienceFactorTotal += skill.custom.experienceFactor;
+  }
 };
 
-SupportCalculator._isRival = function(unit, targetUnit) {
-	if (!targetUnit) {
-		return false;
-	}
+SupportCalculator._isRival = function (unit, targetUnit) {
+  if (!targetUnit) {
+    return false;
+  }
 
-	if (unit.getUnitType() === targetUnit.getUnitType()) {
-		return false;
-	} else if (unit.getUnitType() === UnitType.ENEMY || targetUnit.getUnitType() === UnitType.ENEMY) {
-		return true;
-	} else {
-		return false;
-	}
+  if (unit.getUnitType() === targetUnit.getUnitType()) {
+    return false;
+  } else if (unit.getUnitType() === UnitType.ENEMY || targetUnit.getUnitType() === UnitType.ENEMY) {
+    return true;
+  } else {
+    return false;
+  }
 };
